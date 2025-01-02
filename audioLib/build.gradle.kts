@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.jetbrains.kotlin.android)
-    id("maven-publish")
+    id ("maven-publish")
 }
 
 android {
@@ -33,9 +33,6 @@ android {
     }
 }
 
-group = getGroupId()
-version = getVersionName()
-
 dependencies {
 
     implementation(libs.androidx.core.ktx)
@@ -61,4 +58,18 @@ fun getGroupId(): String {
 
 fun getArtifactId(): String {
     return "AudioLib"
+}
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = groupId
+            artifactId = artifactId
+            version = version
+
+            afterEvaluate {
+                from(components["release"])
+            }
+        }
+    }
 }
