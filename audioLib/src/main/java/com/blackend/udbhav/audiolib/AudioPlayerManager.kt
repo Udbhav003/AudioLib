@@ -25,12 +25,13 @@ class AudioPlayerManager (private val context: Context) {
 
     private lateinit var player: ExoPlayer
     private var mediaSession: MediaLibrarySession? = null
+    private val playerScope = CoroutineScope(Dispatchers.Main)
+    private val stateUpdateJob = CoroutineScope(Dispatchers.Main + Job())
 
     // State flows for playback and position tracking
     private val _playbackState = MutableStateFlow(PlaybackState.Idle.state)
     val playbackState: StateFlow<String> get() = _playbackState
 
-    private val positionUpdateJob = Job()
     private val _playbackPosition = MutableStateFlow(0L)
     val playbackPosition: StateFlow<Long> get() = _playbackPosition
 
@@ -43,10 +44,12 @@ class AudioPlayerManager (private val context: Context) {
     }
 
     private fun initializeMediaSession() {
-        mediaSession = MediaLibrarySession.Builder(context, player,
-            object : MediaLibrarySession.Callback {})
-            .setId(UUID.randomUUID().toString())
-            .build()
+        playerScope.launch {
+            mediaSession = MediaLibrarySession.Builder(context, player,
+                object : MediaLibrarySession.Callback {})
+                .setId(UUID.randomUUID().toString())
+                .build()
+        }
     }
 
     internal fun getSession(): MediaLibrarySession? {
@@ -54,89 +57,115 @@ class AudioPlayerManager (private val context: Context) {
     }
 
     private fun setupPlayer() {
+        playerScope.launch {
 
-        if (this::player.isInitialized) return
+            // Initialize Audio Attributes
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .build()
 
-        // Initialize Audio Attributes
-        val audioAttributes = AudioAttributes.Builder()
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .setUsage(C.USAGE_MEDIA)
-            .build()
+            // Initialize ExoPlayer
+            player = ExoPlayer.Builder(context)
+                .setAudioAttributes(audioAttributes,true)
+                .setHandleAudioBecomingNoisy(true)
+                .build()
 
-        // Initialize ExoPlayer
-        player = ExoPlayer.Builder(context)
-            .setAudioAttributes(audioAttributes,true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
-
-        // Listen for player state changes
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                when (state) {
-                    Player.STATE_IDLE -> _playbackState.update { PlaybackState.Idle.state }
-                    Player.STATE_BUFFERING -> _playbackState.update { PlaybackState.Buffering.state }
-                    Player.STATE_READY -> _playbackState.update { PlaybackState.Ready.state }
-                    Player.STATE_ENDED -> _playbackState.update { PlaybackState.Ended.state }
+            // Listen for player state changes
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    when (state) {
+                        Player.STATE_IDLE -> updateState(_playbackState,{ PlaybackState.Idle.state })
+                        Player.STATE_BUFFERING -> updateState(_playbackState,{ PlaybackState.Buffering.state })
+                        Player.STATE_READY -> updateState(_playbackState,{ PlaybackState.Ready.state })
+                        Player.STATE_ENDED -> updateState(_playbackState,{ PlaybackState.Ended.state })
+                    }
                 }
-            }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _playbackState.update {
-                    if (isPlaying) PlaybackState.Playing.state
-                    else PlaybackState.Paused.state
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    updateState(_playbackState, {
+                        if (isPlaying) { PlaybackState.Playing.state }
+                        else { PlaybackState.Paused.state }
+                    })
                 }
-            }
-        })
+            })
 
-        CoroutineScope(Dispatchers.Main + positionUpdateJob).launch {
-            while (isActive) {
-                _playbackPosition.update { player.currentPosition }
-                delay(100)
-            }
+            updateState(_playbackPosition, { player.currentPosition }, true)
+        }
+    }
+
+    private fun <T> updateState(
+        state: MutableStateFlow<T>,
+        getValue: () -> T,
+        isContinuous: Boolean = false) {
+
+        stateUpdateJob.launch {
+            if (isContinuous) {
+                while (isActive) {
+                    state.update { getValue() }
+                    delay(100)
+                }
+            } else state.update { getValue() }
         }
     }
 
     fun setupQueue(mediaUrls: List<String>?) {
-        mediaUrls?.let {
-            val mediaItems = it.map { url ->
-                MediaItem.Builder().setUri(url).build()
+        playerScope.launch {
+            mediaUrls?.let {
+                val mediaItems = it.map { url ->
+                    MediaItem.Builder().setUri(url).build()
+                }
+                player.setMediaItems(mediaItems)
+                player.prepare()
             }
-            player.setMediaItems(mediaItems)
-            player.prepare()
         }
     }
 
     fun addToQueue(mediaUrl: String) {
-        val mediaItem = MediaItem.Builder().setUri(mediaUrl).build()
-        player.addMediaItem(mediaItem)
-        player.prepare()
+        playerScope.launch {
+            val mediaItem = MediaItem.Builder().setUri(mediaUrl).build()
+            player.addMediaItem(mediaItem)
+            player.prepare()
+        }
     }
 
     fun addToQueue(mediaUrl: String, index: Int) {
-        val mediaItem = MediaItem.Builder().setUri(mediaUrl).build()
-        player.addMediaItem(index, mediaItem)
-        player.prepare()
+        playerScope.launch {
+            val mediaItem = MediaItem.Builder().setUri(mediaUrl).build()
+            player.addMediaItem(index, mediaItem)
+            player.prepare()
+        }
     }
 
     fun removeFromQueue(index: Int) {
-        player.removeMediaItem(index)
+        playerScope.launch {
+            player.removeMediaItem(index)
+        }
     }
 
     fun play() {
-        player.playWhenReady = true
-        player.play()
+        playerScope.launch {
+            player.playWhenReady = true
+            player.play()
+        }
     }
 
     fun pause() {
-        player.pause()
+        playerScope.launch {
+            player.pause()
+        }
     }
 
     fun stop() {
-        player.stop()
+        playerScope.launch {
+            player.stop()
+        }
     }
 
     fun release() {
-        mediaSession?.release()
-        player.release()
+        playerScope.launch {
+            mediaSession?.release()
+            player.release()
+        }
     }
 }
