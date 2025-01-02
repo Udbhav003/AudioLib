@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.jetbrains.kotlin.android)
+    id("maven-publish")
 }
 
 android {
@@ -32,6 +33,9 @@ android {
     }
 }
 
+group = getGroupId()
+version = getVersionName()
+
 dependencies {
 
     implementation(libs.androidx.core.ktx)
@@ -45,4 +49,16 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+}
+
+fun getVersionName(): String {
+    return "v0.0.1-alpha"
+}
+
+fun getGroupId(): String {
+    return "com.github.Udbhav003"
+}
+
+fun getArtifactId(): String {
+    return "AudioLib"
 }
