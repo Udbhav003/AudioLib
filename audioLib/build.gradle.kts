@@ -49,7 +49,7 @@ dependencies {
 }
 
 fun getVersionName(): String {
-    return "v0.0.1-alpha"
+    return "v0.0.2-alpha"
 }
 
 fun getGroupId(): String {
